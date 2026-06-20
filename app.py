@@ -1,8 +1,14 @@
 from io import BytesIO
+from pathlib import Path
+import time
+from urllib import response
 
 import pandas as pd
 import streamlit as st
+
+from src.agent import AnalyticsAgent
 from src.gigachat_client import ask_gigachat
+from src.prompt_guard import check_user_instruction
 
 
 st.set_page_config(
@@ -60,16 +66,87 @@ def show_dataset_preview(df: pd.DataFrame) -> None:
         with st.expander("Базовая статистика по числовым колонкам"):
             st.dataframe(df[numeric_columns].describe().T, use_container_width=True)
 
+def show_tool_tables(response: dict) -> None:
+    result = response.get("result", {})
+    tool_results = result.get("tool_results", [])
 
-def main() -> None:
-    st.title("LLM Data Analytics Agent")
+    if not tool_results:
+        return
 
-    st.write(
-        "Веб-интерфейс для анализа CSV/Excel-датасетов. "
-        "На следующем этапе приложение будет использовать LLM через GigaChat API, "
-        "генерировать Python-код анализа, выполнять его и собирать итоговый отчёт."
-    )
+    st.subheader("Таблицы из результатов инструментов")
 
+    for item in tool_results:
+        tool = item.get("tool")
+        status = item.get("status")
+
+        if status != "ok":
+            continue
+
+        if tool == "correlation":
+            table = item.get("table", [])
+
+            if table:
+                st.write("Корреляционная матрица")
+                st.dataframe(pd.DataFrame(table), use_container_width=True)
+
+        if tool == "top_values":
+            table = item.get("result", [])
+            sort_by = item.get("sort_by", "выбранному признаку")
+
+            if table:
+                st.write(f"Топ-{len(table)} строк по `{sort_by}`")
+                st.dataframe(pd.DataFrame(table), use_container_width=True)
+
+        if tool == "numeric_describe":
+            table = item.get("result", [])
+
+            if table:
+                st.write("Описательная статистика")
+                st.dataframe(pd.DataFrame(table), use_container_width=True)
+
+        if tool == "groupby_mean":
+            table = item.get("result", [])
+            group_by = item.get("group_by")
+            value = item.get("value")
+
+            if table:
+                st.write(f"Среднее `{value}` по `{group_by}`")
+                st.dataframe(pd.DataFrame(table), use_container_width=True)
+
+def show_analysis_result(response: dict) -> None:
+    st.subheader("Итоговый отчёт")
+    warning = response.get("warning")
+
+    if warning:
+        st.warning(warning)
+    st.markdown(response["report"])
+
+    charts = response.get("charts", [])
+    if charts:
+        st.subheader("Графики")
+
+        for chart_path in charts:
+            path = Path(chart_path)
+
+            if path.exists():
+                st.image(str(path))
+
+    show_tool_tables(response)
+
+    with st.expander("Результат выполнения кода"):
+        st.json(response.get("result", {}))
+
+    with st.expander("План анализа и результаты инструментов"):
+        st.code(response.get("code", ""), language="json")
+
+    stdout = response.get("stdout")
+
+    if stdout:
+        with st.expander("stdout"):
+            st.text(stdout)
+
+
+def show_sidebar() -> None:
     with st.sidebar:
         st.header("LLM API")
 
@@ -82,8 +159,27 @@ def main() -> None:
 
                 st.success("GigaChat подключён.")
                 st.write(answer)
+
             except Exception as error:
                 st.error(f"Ошибка подключения: {error}")
+
+        st.divider()
+
+        st.caption(
+            "Ключ GigaChat хранится в .env локально или в Streamlit Secrets при деплое."
+        )
+
+
+def main() -> None:
+    st.title("LLM Data Analytics Agent")
+
+    st.write(
+        "Веб-интерфейс для агентного анализа CSV/Excel-датасетов. "
+        "LLM генерирует Python-код анализа, приложение выполняет его в ограниченном окружении "
+        "и формирует итоговый отчёт."
+    )
+
+    show_sidebar()
 
     uploaded_file = st.file_uploader(
         "Загрузите CSV или Excel-файл",
@@ -102,10 +198,10 @@ def main() -> None:
 
     show_dataset_preview(df)
 
-    st.subheader("Инструкция для будущего LLM-анализа")
+    st.subheader("Инструкция для LLM-анализа")
 
     user_instruction = st.text_area(
-        "Что нужно будет проанализировать?",
+        "Что нужно проанализировать?",
         value=(
             "Проанализируй датасет: найди ключевые метрики, связи между признаками, "
             "аномалии и построй несколько графиков."
@@ -113,13 +209,29 @@ def main() -> None:
         height=120,
     )
 
-    st.info(
-        "На этом этапе инструкция пока только отображается. "
-        "Подключение LLM-агента добавим следующим коммитом."
-    )
+    if st.button("Запустить LLM-анализ", type="primary"):
+        is_safe, message = check_user_instruction(user_instruction)
 
-    with st.expander("Текущая инструкция"):
-        st.write(user_instruction)
+        if not is_safe:
+            st.error(message)
+            return
+
+        run_id = int(time.time())
+        output_dir = Path("outputs") / f"run_{run_id}"
+
+        try:
+            with st.spinner("LLM создает план анализа, выполняет анализ и собирает отчёт..."):
+                agent = AnalyticsAgent()
+                response = agent.run(df, user_instruction, output_dir)
+
+            st.success("Анализ завершён.")
+            show_analysis_result(response)
+
+        except Exception as error:
+            st.error(f"Ошибка при выполнении анализа: {error}")
+            st.warning(
+                "Проверьте текст инструкции, структуру датасета и доступность GigaChat API."
+            )
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@ __pycache__/
 .venv/
 venv/
 
-outputs/*.png
-outputs/*.csv
-outputs/*.json
+outputs/**
+!outputs/
 !outputs/.gitkeep
 
 .streamlit/secrets.toml
+skill_vs_metrics.png

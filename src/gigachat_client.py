@@ -1,9 +1,14 @@
 import os
+import time
 from typing import Any
 
 import streamlit as st
 from dotenv import load_dotenv
 from gigachat import GigaChat
+
+
+MAX_RETRIES = 4
+BASE_RETRY_DELAY = 8
 
 
 def get_secret(name: str, default: str | None = None) -> str | None:
@@ -53,8 +58,40 @@ def extract_text_from_response(response: Any) -> str:
     return str(response)
 
 
-def ask_gigachat(prompt: str) -> str:
-    with create_gigachat_client() as client:
-        response = client.chat(prompt)
+def is_rate_limit_error(error: Exception) -> bool:
+    error_text = str(error).lower()
+    return "429" in error_text or "too many requests" in error_text
 
-    return extract_text_from_response(response)
+
+def ask_gigachat(prompt: str) -> str:
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with create_gigachat_client() as client:
+                response = client.chat(prompt)
+
+            return extract_text_from_response(response)
+
+        except Exception as error:
+            last_error = error
+
+            if not is_rate_limit_error(error):
+                raise
+
+            delay = BASE_RETRY_DELAY * attempt
+
+            try:
+                st.warning(
+                    f"GigaChat временно ограничил запросы. "
+                    f"Повтор через {delay} сек. Попытка {attempt}/{MAX_RETRIES}."
+                )
+            except Exception:
+                pass
+
+            time.sleep(delay)
+
+    raise RuntimeError(
+        "GigaChat API временно ограничил количество запросов. "
+        "Подождите 1–2 минуты и запустите анализ снова."
+    ) from last_error
