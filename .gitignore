@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+outputs/*.png
+outputs/*.csv
+outputs/*.json
+!outputs/.gitkeep
+
+.streamlit/secrets.toml
