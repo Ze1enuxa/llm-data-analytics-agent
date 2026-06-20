@@ -2,6 +2,7 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+from src.gigachat_client import ask_gigachat
 
 
 st.set_page_config(
@@ -61,13 +62,28 @@ def show_dataset_preview(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    st.title("📊 LLM Data Analytics Agent")
+    st.title("LLM Data Analytics Agent")
 
     st.write(
         "Веб-интерфейс для анализа CSV/Excel-датасетов. "
         "На следующем этапе приложение будет использовать LLM через GigaChat API, "
         "генерировать Python-код анализа, выполнять его и собирать итоговый отчёт."
     )
+
+    with st.sidebar:
+        st.header("LLM API")
+
+        if st.button("Проверить GigaChat"):
+            try:
+                with st.spinner("Проверяю подключение..."):
+                    answer = ask_gigachat(
+                        "Ответь одним коротким предложением: подключение к GigaChat работает."
+                    )
+
+                st.success("GigaChat подключён.")
+                st.write(answer)
+            except Exception as error:
+                st.error(f"Ошибка подключения: {error}")
 
     uploaded_file = st.file_uploader(
         "Загрузите CSV или Excel-файл",
