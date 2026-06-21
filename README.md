@@ -1,7 +1,8 @@
 # LLM Data Analytics Agent
 
 Link:
-```[link on web-interface](https://llm-data-analytics-agent-nnepticw2yaby7btg4gzcn.streamlit.app/)
+```link
+[ссылка на веб-интерфейс](https://llm-data-analytics-agent-nnepticw2yaby7btg4gzcn.streamlit.app/)
 ```
 
 Веб-приложение для агентного анализа CSV/Excel-датасетов с использованием LLM через GigaChat API.
